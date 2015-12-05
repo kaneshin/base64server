@@ -1,0 +1,51 @@
+machine:
+  environment:
+    CHECKOUT_PATH: $HOME/$CIRCLE_PROJECT_REPONAME
+    IMPORT_PATH: "github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+    APP_PORT: "9000"
+  pre:
+    - >
+      curl -o go.tar.gz -sL https://storage.googleapis.com/golang/go1.5.2.linux-amd64.tar.gz &&
+      sudo rm -rf /usr/local/go &&
+      sudo tar -C /usr/local -xzf go.tar.gz &&
+      sudo chmod a+w /usr/local/go/src/
+  post:
+    - >
+      echo "export BUILD_VERSION=\"`git --git-dir=${CHECKOUT_PATH}/.git describe --always --dirty`\"" >> ~/.circlerc;
+      echo "export BUILD_DATE=\"`date +%FT%T%z`\"" >> ~/.circlerc;
+      cat ~/.circlerc
+
+dependencies:
+  pre:
+    - go get -v github.com/axw/gocov/gocov
+    - go get -v github.com/mattn/goveralls
+    - go get -v github.com/golang/lint/golint
+
+test:
+  pre:
+    - go version
+    - go build -a -v -o /tmp/base64server .
+    - /tmp/base64server -port=${APP_PORT}:
+        background: true
+  override:
+    - test -z "$(gofmt -s -l . | tee /dev/stderr)"
+    - go vet ./...
+    - test -z "$(golint ./... | tee /dev/stderr)"
+    - go test -race -test.v ./...
+    - >
+      req="localhost:${APP_PORT}/encode?v=hello+world";
+      curl --fail -v -XGET "${req}" &&
+      e=$(curl -XGET "${req}") && [[ "${e}" = "aGVsbG8gd29ybGQ=" ]]
+    - >
+      req="localhost:${APP_PORT}/decode?v=aGVsbG8gd29ybGQ=";
+      curl --fail -v -XGET "${req}" &&
+      d=$(curl -XGET "${req}") && [[ "${d}" = "hello world" ]]
+
+deployment:
+  release:
+    branch: master
+    commands:
+      - go get github.com/mitchellh/gox
+      - go get github.com/tcnksm/ghr
+      - gox -ldflags "-X main.Version $BUILD_VERSION -X main.BuildDate $BUILD_DATE" -output "dist/${CIRCLE_PROJECT_REPONAME}_{{.OS}}_{{.Arch}}"
+      - ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME --replace `git describe --tags` dist/
