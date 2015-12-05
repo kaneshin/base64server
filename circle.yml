@@ -1,7 +1,6 @@
 machine:
   environment:
     CHECKOUT_PATH: $HOME/$CIRCLE_PROJECT_REPONAME
-    IMPORT_PATH: "github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
     APP_PORT: "9000"
   pre:
     - >
@@ -32,14 +31,7 @@ test:
     - go vet ./...
     - test -z "$(golint ./... | tee /dev/stderr)"
     - go test -race -test.v ./...
-    - >
-      req="localhost:${APP_PORT}/encode?v=hello+world";
-      curl --fail -v -XGET "${req}" &&
-      e=$(curl -XGET "${req}") && [[ "${e}" = "aGVsbG8gd29ybGQ=" ]]
-    - >
-      req="localhost:${APP_PORT}/decode?v=aGVsbG8gd29ybGQ=";
-      curl --fail -v -XGET "${req}" &&
-      d=$(curl -XGET "${req}") && [[ "${d}" = "hello world" ]]
+    - ./runner.sh
 
 deployment:
   release:
@@ -47,5 +39,5 @@ deployment:
     commands:
       - go get github.com/mitchellh/gox
       - go get github.com/tcnksm/ghr
-      - gox -ldflags "-X main.Version $BUILD_VERSION -X main.BuildDate $BUILD_DATE" -output "dist/${CIRCLE_PROJECT_REPONAME}_{{.OS}}_{{.Arch}}"
+      - gox -ldflags "-X main.BuildVersion $BUILD_VERSION -X main.BuildDate $BUILD_DATE" -output "dist/${CIRCLE_PROJECT_REPONAME}_{{.OS}}_{{.Arch}}"
       - ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME --replace `git describe --tags` dist/
